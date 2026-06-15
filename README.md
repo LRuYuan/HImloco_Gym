@@ -57,7 +57,8 @@ We test our codes under the following environment:
 2. Play and export the latest policy:
   - `cd legged_gym/legged_gym/scripts`
   - `python play.py`
-
+  
+  - 'python train.py --task=argos --resume --load_run=Jun10_13-56-11_ --checkpoint=680‘ 
 
 ## 🔗 Citation
 

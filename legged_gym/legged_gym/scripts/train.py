@@ -39,9 +39,19 @@ import torch
 
 def train(args, headless=True):
     args.headless = headless
-    args.resume = False
+    # args.resume = True
     env, env_cfg = task_registry.make_env(name=args.task, args=args)
     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args)
+
+    # # ================== 👇 补上这段核心的 Resume 逻辑 👇 ==================
+    # if train_cfg.runner.resume:
+    #     # 获取最新的模型路径
+    #     resume_path = get_load_path(log_dir, load_run=train_cfg.runner.load_run, checkpoint=train_cfg.runner.checkpoint)
+    #     print(f"成功找到旧存档，准备从 {resume_path} 恢复训练...")
+    #     # 真正调用 runner 里的 load 函数读取权重和轮数！
+    #     ppo_runner.load(resume_path)
+    # # ======================================================================
+
     ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True)
 
 if __name__ == '__main__':

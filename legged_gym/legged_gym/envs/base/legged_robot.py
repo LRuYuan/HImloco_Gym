@@ -458,7 +458,7 @@ class LeggedRobot(BaseTask):
         Args:
             env_ids (List[int]): Environments ids for which new commands are needed
         """
-        self.commands[env_ids, 0] = torch_rand_float(-1.0, 1.0, (len(env_ids), 1), device=self.device).squeeze(1)
+        self.commands[env_ids, 0] = torch_rand_float(-1, 1, (len(env_ids), 1), device=self.device).squeeze(1)
         self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=self.device).squeeze(1)
         if self.cfg.commands.heading_command:
             self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
@@ -475,6 +475,8 @@ class LeggedRobot(BaseTask):
 
         # set small commands to zero
         self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+        # 给角速度也加一个独立的死区
+        self.commands[env_ids, 2] *= (torch.abs(self.commands[env_ids, 2]) > 0.05)
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -534,6 +536,7 @@ class LeggedRobot(BaseTask):
             self.root_states[env_ids] = self.base_init_state
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
         # base velocities
+        # 代码把机器人的线速度 [7:10] 和角速度 [10:13] 全部随机设置为 -0.5 到 0.5 之间的浮点数。
         self.root_states[env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
         env_ids_int32 = env_ids.to(dtype=torch.int32)
         self.gym.set_actor_root_state_tensor_indexed(self.sim,
@@ -1165,6 +1168,49 @@ class LeggedRobot(BaseTask):
         return torch.sum(torch.square(self.actions - self.last_actions - self.last_actions + self.last_last_actions), dim=1)
     
 
+    def _reward_stand_still(self):
+        # 1. 计算当前关节位置与默认姿态的绝对偏差总和
+        deviation = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1)
+        
+        # 2. 判定线速度 (xy) 是否接近零
+        lin_vel_still = torch.norm(self.commands[:, :2], dim=1) < 0.2
+        
+        # 3. 判定角速度 (yaw) 是否接近零
+        ang_vel_still = torch.abs(self.commands[:, 2]) < 0.2
+        
+        # 4. 取交集作为掩码：只有都不动时，才惩罚偏离默认姿态的行为
+        is_still_mask = (lin_vel_still & ang_vel_still).float()
+        
+        return deviation * is_still_mask
+
+    def _reward_feet_distance_boundary(self):
+        # 1. 提取足端世界坐标 XY 平面位置 [num_envs, 4, 2]
+        # 索引顺序: 0:FL, 1:FR, 2:HL, 3:HR
+        feet_pos_xy = self.feet_pos[:, :, :2]
+
+        # 2. 计算左右脚间距 (XY 平面欧式距离)
+        # 前腿对: FL (0) 和 FR (1)
+        dist_front = torch.norm(feet_pos_xy[:, 0] - feet_pos_xy[:, 1], dim=-1)
+        # 后腿对: HL (2) 和 HR (3)
+        dist_hind = torch.norm(feet_pos_xy[:, 2] - feet_pos_xy[:, 3], dim=-1)
+
+        # 3. 获取边界参数 (为了灵活，优先从 cfg 读取，缺失则使用默认值)
+        min_dist =0.2
+        max_dist = 0.33
+
+
+        # 4. 计算边界惩罚
+        # 最小距离惩罚: (min_dist - dist).clamp(min=0)
+        lower_penalty = torch.clamp(min_dist - dist_front, min=0.0) + \
+                        torch.clamp(min_dist - dist_hind, min=0.0)
+        
+        # 最大距离惩罚: (dist - max_dist).clamp(min=0)
+        upper_penalty = torch.clamp(dist_front - max_dist, min=0.0) + \
+                        torch.clamp(dist_hind - max_dist, min=0.0)
+
+        # 返回平方和惩罚 (L2 形式梯度更平滑)
+        return torch.square(lower_penalty) + torch.square(upper_penalty)
+
 
 
 
@@ -1216,10 +1262,11 @@ class LeggedRobot(BaseTask):
         # Penalize feet hitting vertical surfaces
         return torch.any(torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) >\
              5 *torch.abs(self.contact_forces[:, self.feet_indices, 2]), dim=1)
-        
-    def _reward_stand_still(self):
-        # Penalize motion at zero commands
-        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+    
+
+    # def _reward_stand_still(self):
+    #     # Penalize motion at zero commands
+    #     return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
 
     def _reward_feet_contact_forces(self):
         # penalize high contact forces

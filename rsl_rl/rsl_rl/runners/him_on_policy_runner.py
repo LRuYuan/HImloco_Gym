@@ -103,6 +103,9 @@ class HIMOnPolicyRunner:
 
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for it in range(self.current_learning_iteration, tot_iter):
+
+            self.current_learning_iteration = it  # 👈 加上这行，强行同步真实轮数！
+
             start = time.time()
             # Rollout
             with torch.inference_mode():
@@ -188,8 +191,9 @@ class HIMOnPolicyRunner:
             self.writer.add_scalar('Train/mean_reward/time', statistics.mean(locs['rewbuffer']), self.tot_time)
             self.writer.add_scalar('Train/mean_episode_length/time', statistics.mean(locs['lenbuffer']), self.tot_time)
 
-        str = f" \033[1m Learning iteration {locs['it']}/{self.current_learning_iteration + locs['num_learning_iterations']} \033[0m "
-
+        # str = f" \033[1m Learning iteration {locs['it']}/{self.current_learning_iteration + locs['num_learning_iterations']} \033[0m "
+        # 替换成这行（直接使用 locals 里已经算好的 tot_iter）：
+        str = f" \033[1m Learning iteration {locs['it']}/{locs['tot_iter']} \033[0m "
         if len(locs['rewbuffer']) > 0:
             log_string = (f"""{'#' * width}\n"""
                           f"""{str.center(width, ' ')}\n\n"""

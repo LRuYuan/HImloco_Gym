@@ -53,7 +53,7 @@ class ArgosRoughCfg( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        stiffness = {'joint': 40.0}  # [N*m/rad]
+        stiffness = {'joint': 50.0}  # [N*m/rad]
         damping = {'joint': 1.0}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.25
@@ -87,8 +87,8 @@ class ArgosRoughCfg( LeggedRobotCfg ):
         class scales:
             termination = -0.0
             # 基础奖励
-            tracking_lin_vel = 4
-            tracking_ang_vel = 2
+            tracking_lin_vel = 2
+            tracking_ang_vel = 0.5
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
             orientation = -0.2
@@ -96,16 +96,19 @@ class ArgosRoughCfg( LeggedRobotCfg ):
             # 平滑动作奖励
             dof_acc = -2.5e-7
             joint_power = -2e-5
-            action_rate = -0.01
-            smoothness = -0.01
+            # 修改了动作平滑奖励的权重，从 -0.01 调整为 -0.05，以更强烈地鼓励平滑的动作变化。
+            action_rate = -0.1
+            smoothness = -0.1
 
             base_height = -1.0
             foot_clearance = -0.01
+            # 修改这个奖励的权重，从 -5 调整为 -0.5，以减少对机器人保持特定高度的过度惩罚，允许更多的灵活性。
+            stand_still = -0.5
+            feet_distance_boundary = -0.1
             
             feet_air_time =  0.0
             collision = -0.0
             feet_stumble = -0.0
-            stand_still = -0.
             torques = -0.0
             dof_vel = -0.0
             dof_pos_limits = -0.0
